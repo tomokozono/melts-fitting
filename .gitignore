@@ -1,0 +1,12 @@
+# Data files
+*.tbl
+*.xlsx
+*.csv
+
+# Output figures
+*.png
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/

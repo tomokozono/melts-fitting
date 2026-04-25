@@ -1,0 +1,205 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ---------- Giordano et al. (2008) VTF viscosity model ----------
+MFW = {
+    "SiO2": 60.0843, "TiO2": 79.8658, "Al2O3": 101.961276,
+    "FeOt": 71.8444, "MnO": 70.937449, "MgO": 40.3044,
+    "CaO": 56.0774, "Na2O": 61.97894, "K2O": 94.196,
+    "P2O5": 141.9446, "H2O": 18.01528,
+}
+
+# Model coefficients (Table 1, Giordano et al. 2008)
+B_COEFF = {"b1": 159.56, "b2": -173.34, "b3": 72.13, "b4": 75.69,
+           "b5": -38.98, "b6": -84.08, "b7": 141.54,
+           "b11": -2.43, "b12": -0.91, "b13": 17.62}
+C_COEFF = {"c1": 2.75, "c2": 15.72, "c3": 8.32, "c4": 10.20,
+           "c5": -12.29, "c6": -99.54, "c11": 0.30}
+
+
+def giordano2008_logeta(T_C, SiO2, TiO2, Al2O3, Fe2O3, FeO, MnO, MgO,
+                         CaO, Na2O, K2O, P2O5, H2O_wt):
+    """
+    Returns log10(viscosity [Pa·s]).
+    Inputs: T in °C, oxides in wt%.
+    """
+    # Convert Fe2O3 + FeO to total FeOt
+    FeOt = 0.9 * Fe2O3 + FeO
+
+    # Normalize anhydrous oxides to (100 - H2O_wt), then add H2O as-is
+    anhydrous = np.array([SiO2, TiO2, Al2O3, FeOt, MnO, MgO, CaO, Na2O, K2O, P2O5])
+    sum1 = anhydrous.sum(axis=0)
+    factor = (100.0 - H2O_wt) / sum1
+    Si, Ti, Al, Fe, Mn, Mg, Ca, Na, K, P = [ox * factor for ox in anhydrous]
+    Hw = H2O_wt  # H2O stays as-is
+
+    # Compute mol% (each wt%_norm / MFW * GFW)
+    wt_arr = np.stack([Si, Ti, Al, Fe, Mn, Mg, Ca, Na, K, P, Hw], axis=0)  # (11, N)
+    mfw_arr = np.array([MFW[k] for k in
+                        ["SiO2","TiO2","Al2O3","FeOt","MnO","MgO",
+                         "CaO","Na2O","K2O","P2O5","H2O"]])[:, None]      # (11, 1)
+    n = wt_arr / mfw_arr                # proportional to moles, shape (11, N)
+    GFW = 100.0 / n.sum(axis=0)        # average formula weight, shape (N,)
+    m = n * GFW                         # mol%, shape (11, N)
+
+    Si, Ti, Al, Fe, Mn, Mg, Ca, Na, K, P, Hw = m  # each shape (N,)
+
+    b = B_COEFF
+    c = C_COEFF
+
+    B = (b["b1"]  * (Si + Ti)
+       + b["b2"]  * Al
+       + b["b3"]  * (Fe + Mn + P)
+       + b["b4"]  * Mg
+       + b["b5"]  * Ca
+       + b["b6"]  * (Na + Hw)
+       + b["b7"]  * (Hw + np.log(1.0 + Hw))
+       + b["b11"] * (Si + Ti) * (Fe + Mn + Mg)
+       + b["b12"] * (Si + Ti + Al + P) * (Na + K + Hw)
+       + b["b13"] * Al * (Na + K))
+
+    C = (c["c1"]  * Si
+       + c["c2"]  * (Ti + Al)
+       + c["c3"]  * (Fe + Mn + Mg)
+       + c["c4"]  * Ca
+       + c["c5"]  * (Na + K)
+       + c["c6"]  * np.log(1.0 + Hw)
+       + c["c11"] * (Al + Fe + Mn + Mg + Ca - P) * (Na + K + Hw))
+
+    T_K = T_C + 273.15
+    return -4.55 + B / (T_K - C)   # log10(Pa·s)
+
+
+# ---------- Load melts-liquid.tbl ----------
+df = pd.read_csv("melts-liquid.tbl", header=0)
+df.columns = df.columns.str.strip()
+
+mask = df["wt% H2O"] > 0
+d = df[mask].copy()
+
+log_eta = giordano2008_logeta(
+    T_C    = d["T (C)"].values,
+    SiO2   = d["wt% SiO2"].values,
+    TiO2   = d["wt% TiO2"].values,
+    Al2O3  = d["wt% Al2O3"].values,
+    Fe2O3  = d["wt% Fe2O3"].values,
+    FeO    = d["wt% FeO"].values,
+    MnO    = d["wt% MnO"].values,
+    MgO    = d["wt% MgO"].values,
+    CaO    = d["wt% CaO"].values,
+    Na2O   = d["wt% Na2O"].values,
+    K2O    = d["wt% K2O"].values,
+    P2O5   = d["wt% P2O5"].values,
+    H2O_wt = d["wt% H2O"].values,
+)
+
+H2O_frac = d["wt% H2O"].values / 100.0
+T_C      = d["T (C)"].values
+
+# MELTS liq vis: log10(poise) -> Pa·s
+log_vis_melts = d["liq vis (log 10 poise)"].values - 1.0  # log10(Pa·s) = log10(poise) + log10(0.1)
+
+# Hess & Dingwell (1996)
+def hess_dingwell(T_C, H2O_frac):
+    x = np.log(100.0 * H2O_frac)  # ln(wt% H2O)
+    return -3.545 + 0.833*x + (9601.0 - 2368.0*x) / (T_C + 273.0 - (195.7 + 32.25*x))
+
+# Verify against Excel logeta (first 5 rows)
+xl = pd.read_excel("Giordano2008.xlsx", header=0)
+xl.columns = xl.columns.str.strip()
+print("Verification (first 5 rows):")
+print(f"{'Row':>4}  {'Python':>10}  {'Excel':>10}  {'Diff':>10}")
+for i in range(5):
+    py_val = log_eta[i]
+    xl_val = xl["logeta"].values[i]
+    print(f"  {i+1:2d}  {py_val:10.6f}  {xl_val:10.6f}  {py_val-xl_val:10.6f}")
+
+# ---------- 4th degree polynomial fitting ----------
+deg = 4
+coeffs = np.polyfit(H2O_frac, log_eta, deg)
+log_eta_pred = np.polyval(coeffs, H2O_frac)
+residuals = log_eta - log_eta_pred
+ss_res = np.sum(residuals**2)
+ss_tot = np.sum((log_eta - np.mean(log_eta))**2)
+r2 = 1 - ss_res / ss_tot
+n_pts, k = len(H2O_frac), deg + 1
+aic = n_pts * np.log(ss_res / n_pts) + 2 * k
+bic = n_pts * np.log(ss_res / n_pts) + k * np.log(n_pts)
+
+print(f"\n4th-degree polynomial fit:")
+print(f"  Coefficients (high→low): {coeffs}")
+print(f"  R² = {r2:.8f}")
+print(f"  AIC = {aic:.2f},  BIC = {bic:.2f}")
+print(f"  N = {n_pts}")
+
+# Build equation string for legend
+terms = []
+for j, c in enumerate(coeffs):
+    power = deg - j
+    if power == 0:
+        terms.append(f"{c:+.4f}")
+    elif power == 1:
+        terms.append(f"{c:+.4f}·X")
+    else:
+        terms.append(f"{c:+.4e}·X{power}")
+eq_str = "log₁₀η = " + " ".join(terms)
+
+H2O_fit = np.linspace(H2O_frac.min(), H2O_frac.max(), 400)
+log_eta_fit = np.polyval(coeffs, H2O_fit)
+
+# ---------- Plot ----------
+fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+H2O_hd = np.linspace(H2O_frac.min(), H2O_frac.max(), 400)
+log_eta_hd = hess_dingwell(T_C.mean(), H2O_hd)
+
+ax = axes[0]
+ax.scatter(H2O_frac, log_eta, s=4, alpha=0.35, color="steelblue",
+           label="Giordano (2008) model")
+ax.scatter(H2O_frac, log_vis_melts, s=4, alpha=0.35, color="orange",
+           label="MELTS liq vis")
+ax.plot(H2O_fit, log_eta_fit, "r-", linewidth=2,
+        label=f"Degree-4 poly fit (Giordano)  R²={r2:.6f}")
+ax.plot(H2O_hd, log_eta_hd, "g--", linewidth=2,
+        label="Hess & Dingwell (1996)")
+ax.set_xlabel("H₂O (fraction)", fontsize=12)
+ax.set_ylabel("log₁₀ Viscosity (Pa·s)", fontsize=12)
+ax.set_title("Viscosity vs H₂O", fontsize=13)
+ax.legend(fontsize=9)
+ax.grid(True, alpha=0.3)
+
+ax2 = axes[1]
+ax2.scatter(H2O_frac, residuals, s=4, alpha=0.35, color="steelblue")
+ax2.axhline(0, color="red", linewidth=1)
+ax2.set_xlabel("H₂O (fraction)", fontsize=12)
+ax2.set_ylabel("Residuals (log₁₀ Pa·s)", fontsize=12)
+ax2.set_title("Residuals", fontsize=13)
+ax2.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig("viscosity_giordano_poly4.png", dpi=150, bbox_inches="tight")
+plt.close()
+print("Saved: viscosity_giordano_poly4.png")
+
+# ---------- Save plot data ----------
+# Scatter data (per MELTS step)
+df_scatter = pd.DataFrame({
+    "H2O_fraction":            H2O_frac,
+    "log10_vis_Giordano2008":  log_eta,
+    "log10_vis_MELTS":         log_vis_melts,
+    "log10_vis_poly4_fit":     np.polyval(coeffs, H2O_frac),
+    "residual_Giordano_poly4": residuals,
+})
+df_scatter.to_csv("viscosity_scatter_data.csv", index=False, float_format="%.8f")
+
+# Curve data (model lines)
+df_curves = pd.DataFrame({
+    "H2O_fraction":          H2O_fit,
+    "log10_vis_poly4_fit":   log_eta_fit,
+})
+# H&D is on the same H2O grid (H2O_hd == H2O_fit)
+df_curves["log10_vis_HessDingwell1996"] = log_eta_hd
+df_curves.to_csv("viscosity_curve_data.csv", index=False, float_format="%.8f")
+
+print("Saved: viscosity_scatter_data.csv, viscosity_curve_data.csv")

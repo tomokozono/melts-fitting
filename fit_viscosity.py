@@ -138,34 +138,54 @@ def hess_dingwell(T_C, H2O_frac):
 deg = 4
 coeffs = np.polyfit(H2O_frac, log_eta, deg)
 log_eta_pred = np.polyval(coeffs, H2O_frac)
-residuals = log_eta - log_eta_pred
-ss_res = np.sum(residuals**2)
+residuals_poly = log_eta - log_eta_pred
+ss_res = np.sum(residuals_poly**2)
 ss_tot = np.sum((log_eta - np.mean(log_eta))**2)
-r2 = 1 - ss_res / ss_tot
+r2_poly = 1 - ss_res / ss_tot
 n_pts, k = len(H2O_frac), deg + 1
-aic = n_pts * np.log(ss_res / n_pts) + 2 * k
-bic = n_pts * np.log(ss_res / n_pts) + k * np.log(n_pts)
+aic_poly = n_pts * np.log(ss_res / n_pts) + 2 * k
+bic_poly = n_pts * np.log(ss_res / n_pts) + k * np.log(n_pts)
 
 print(f"\n4th-degree polynomial fit:")
 print(f"  Coefficients (high→low): {coeffs}")
-print(f"  R² = {r2:.8f}")
-print(f"  AIC = {aic:.2f},  BIC = {bic:.2f}")
-print(f"  N = {n_pts}")
-
-# Build equation string for legend
-terms = []
-for j, c in enumerate(coeffs):
-    power = deg - j
-    if power == 0:
-        terms.append(f"{c:+.4f}")
-    elif power == 1:
-        terms.append(f"{c:+.4f}·X")
-    else:
-        terms.append(f"{c:+.4e}·X{power}")
-eq_str = "log₁₀η = " + " ".join(terms)
+print(f"  R² = {r2_poly:.8f},  AIC = {aic_poly:.2f},  BIC = {bic_poly:.2f}")
 
 H2O_fit = np.linspace(H2O_frac.min(), H2O_frac.max(), 400)
 log_eta_fit = np.polyval(coeffs, H2O_fit)
+
+# ---------- H&D-form fitting (6 parameters) ----------
+from scipy.optimize import curve_fit
+
+def hd_form(X, a, b, c, d, e, f):
+    """log10(η) = a + b*x + (c + d*x) / (T_K - (e + f*x)),  x = ln(wt% H2O)"""
+    T_C_arr, H2O_frac_arr = X
+    x = np.log(100.0 * H2O_frac_arr)
+    T_K = T_C_arr + 273.0
+    return a + b*x + (c + d*x) / (T_K - (e + f*x))
+
+p0 = [-3.545, 0.833, 9601.0, -2368.0, 195.7, 32.25]   # H&D (1996) as initial guess
+popt_hd, pcov_hd = curve_fit(hd_form, (T_C, H2O_frac), log_eta,
+                              p0=p0, maxfev=20000)
+a_hd, b_hd, c_hd, d_hd, e_hd, f_hd = popt_hd
+perr_hd = np.sqrt(np.diag(pcov_hd))
+
+log_eta_hd_fit_data = hd_form((T_C, H2O_frac), *popt_hd)
+residuals_hd = log_eta - log_eta_hd_fit_data
+ss_res_hd = np.sum(residuals_hd**2)
+r2_hd  = 1 - ss_res_hd / ss_tot
+aic_hd = n_pts * np.log(ss_res_hd / n_pts) + 2 * 6
+bic_hd = n_pts * np.log(ss_res_hd / n_pts) + 6 * np.log(n_pts)
+
+print(f"\nH&D-form fit (6 parameters):")
+print(f"  a = {a_hd:.4f} ± {perr_hd[0]:.4f}  (H&D: -3.545)")
+print(f"  b = {b_hd:.4f} ± {perr_hd[1]:.4f}  (H&D:  0.833)")
+print(f"  c = {c_hd:.2f} ± {perr_hd[2]:.2f}  (H&D: 9601)")
+print(f"  d = {d_hd:.2f} ± {perr_hd[3]:.2f}  (H&D: -2368)")
+print(f"  e = {e_hd:.4f} ± {perr_hd[4]:.4f}  (H&D: 195.7)")
+print(f"  f = {f_hd:.4f} ± {perr_hd[5]:.4f}  (H&D: 32.25)")
+print(f"  R² = {r2_hd:.8f},  AIC = {aic_hd:.2f},  BIC = {bic_hd:.2f}")
+
+log_eta_hd_fit_curve = hd_form((np.full(len(H2O_fit), T_C.mean()), H2O_fit), *popt_hd)
 
 # ---------- Plot ----------
 fig, axes = plt.subplots(1, 2, figsize=(13, 5))
@@ -181,7 +201,9 @@ ax.scatter(H2O_frac, log_eta_fixcomp, s=4, alpha=0.35, color="mediumpurple",
 ax.scatter(H2O_frac, log_vis_melts, s=4, alpha=0.35, color="orange",
            label="MELTS liq vis")
 ax.plot(H2O_fit, log_eta_fit, "r-", linewidth=2,
-        label=f"Degree-4 poly fit (Giordano full)  R²={r2:.6f}")
+        label=f"Degree-4 poly fit  R²={r2_poly:.6f}")
+ax.plot(H2O_fit, log_eta_hd_fit_curve, "r--", linewidth=2,
+        label=f"H&D-form fit (6 params)  R²={r2_hd:.6f}")
 ax.plot(H2O_hd, log_eta_hd, "g--", linewidth=2,
         label="Hess & Dingwell (1996)")
 ax.set_xlabel("H₂O (fraction)", fontsize=12)
@@ -191,8 +213,12 @@ ax.legend(fontsize=9)
 ax.grid(True, alpha=0.3)
 
 ax2 = axes[1]
-ax2.scatter(H2O_frac, residuals, s=4, alpha=0.35, color="steelblue")
-ax2.axhline(0, color="red", linewidth=1)
+ax2.scatter(H2O_frac, residuals_poly, s=4, alpha=0.35, color="red",
+            label=f"Poly-4  R²={r2_poly:.6f}")
+ax2.scatter(H2O_frac, residuals_hd,   s=4, alpha=0.35, color="darkred",
+            label=f"H&D-form  R²={r2_hd:.6f}")
+ax2.axhline(0, color="black", linewidth=1)
+ax2.legend(fontsize=9)
 ax2.set_xlabel("H₂O (fraction)", fontsize=12)
 ax2.set_ylabel("Residuals (log₁₀ Pa·s)", fontsize=12)
 ax2.set_title("Residuals", fontsize=13)
@@ -210,13 +236,16 @@ df_scatter = pd.DataFrame({
     "log10_vis_Giordano2008_fixcomp":  log_eta_fixcomp,
     "log10_vis_MELTS":                 log_vis_melts,
     "log10_vis_poly4_fit":             np.polyval(coeffs, H2O_frac),
-    "residual_Giordano_poly4":         residuals,
+    "log10_vis_HDform_fit":            log_eta_hd_fit_data,
+    "residual_poly4":                  residuals_poly,
+    "residual_HDform":                 residuals_hd,
 })
 df_scatter.to_csv(out_dir / "viscosity_scatter_data.csv", index=False, float_format="%.8f")
 
 df_curves = pd.DataFrame({
     "H2O_fraction":              H2O_fit,
-    "log10_vis_poly4_fit":       log_eta_fit,
+    "log10_vis_poly4_fit":        log_eta_fit,
+    "log10_vis_HDform_fit":       log_eta_hd_fit_curve,
     "log10_vis_HessDingwell1996": log_eta_hd,
 })
 df_curves.to_csv(out_dir / "viscosity_curve_data.csv", index=False, float_format="%.8f")

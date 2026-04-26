@@ -87,6 +87,7 @@ df.columns = df.columns.str.strip()
 mask = df["wt% H2O"] > 0
 d = df[mask].copy()
 
+# Full Giordano: all oxides vary with P
 log_eta = giordano2008_logeta(
     T_C    = d["T (C)"].values,
     SiO2   = d["wt% SiO2"].values,
@@ -100,6 +101,25 @@ log_eta = giordano2008_logeta(
     Na2O   = d["wt% Na2O"].values,
     K2O    = d["wt% K2O"].values,
     P2O5   = d["wt% P2O5"].values,
+    H2O_wt = d["wt% H2O"].values,
+)
+
+# Fixed-composition Giordano: oxides fixed at index=1, only H2O varies
+row1 = df[df["Index"] == 1].iloc[0]
+n = len(d)
+log_eta_fixcomp = giordano2008_logeta(
+    T_C    = d["T (C)"].values,
+    SiO2   = np.full(n, row1["wt% SiO2"]),
+    TiO2   = np.full(n, row1["wt% TiO2"]),
+    Al2O3  = np.full(n, row1["wt% Al2O3"]),
+    Fe2O3  = np.full(n, row1["wt% Fe2O3"]),
+    FeO    = np.full(n, row1["wt% FeO"]),
+    MnO    = np.full(n, row1["wt% MnO"]),
+    MgO    = np.full(n, row1["wt% MgO"]),
+    CaO    = np.full(n, row1["wt% CaO"]),
+    Na2O   = np.full(n, row1["wt% Na2O"]),
+    K2O    = np.full(n, row1["wt% K2O"]),
+    P2O5   = np.full(n, row1["wt% P2O5"]),
     H2O_wt = d["wt% H2O"].values,
 )
 
@@ -155,11 +175,13 @@ log_eta_hd = hess_dingwell(T_C.mean(), H2O_hd)
 
 ax = axes[0]
 ax.scatter(H2O_frac, log_eta, s=4, alpha=0.35, color="steelblue",
-           label="Giordano (2008) model")
+           label="Giordano (2008) — full composition")
+ax.scatter(H2O_frac, log_eta_fixcomp, s=4, alpha=0.35, color="mediumpurple",
+           label="Giordano (2008) — fixed comp. (index=1), H₂O only")
 ax.scatter(H2O_frac, log_vis_melts, s=4, alpha=0.35, color="orange",
            label="MELTS liq vis")
 ax.plot(H2O_fit, log_eta_fit, "r-", linewidth=2,
-        label=f"Degree-4 poly fit (Giordano)  R²={r2:.6f}")
+        label=f"Degree-4 poly fit (Giordano full)  R²={r2:.6f}")
 ax.plot(H2O_hd, log_eta_hd, "g--", linewidth=2,
         label="Hess & Dingwell (1996)")
 ax.set_xlabel("H₂O (fraction)", fontsize=12)
@@ -183,11 +205,12 @@ print(f"Saved: {out_dir / 'viscosity_giordano_poly4.png'}")
 
 # ---------- Save plot data ----------
 df_scatter = pd.DataFrame({
-    "H2O_fraction":            H2O_frac,
-    "log10_vis_Giordano2008":  log_eta,
-    "log10_vis_MELTS":         log_vis_melts,
-    "log10_vis_poly4_fit":     np.polyval(coeffs, H2O_frac),
-    "residual_Giordano_poly4": residuals,
+    "H2O_fraction":                    H2O_frac,
+    "log10_vis_Giordano2008_full":     log_eta,
+    "log10_vis_Giordano2008_fixcomp":  log_eta_fixcomp,
+    "log10_vis_MELTS":                 log_vis_melts,
+    "log10_vis_poly4_fit":             np.polyval(coeffs, H2O_frac),
+    "residual_Giordano_poly4":         residuals,
 })
 df_scatter.to_csv(out_dir / "viscosity_scatter_data.csv", index=False, float_format="%.8f")
 

@@ -1,8 +1,17 @@
+import argparse
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-df = pd.read_csv("melts-liquid.tbl", header=0)
+parser = argparse.ArgumentParser()
+parser.add_argument("tbl", nargs="?", default="melts-liquid.tbl",
+                    help="Path to melts-liquid.tbl")
+args = parser.parse_args()
+tbl_path = Path(args.tbl)
+out_dir  = tbl_path.parent
+
+df = pd.read_csv(tbl_path, header=0)
 df.columns = df.columns.str.strip()
 
 V1 = df.loc[df["Index"] == 1, "liq V (cc)"].values[0]
@@ -97,6 +106,6 @@ ax2.legend(fontsize=9)
 ax2.grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig("crystallinity_vs_P.png", dpi=150, bbox_inches="tight")
+plt.savefig(out_dir / "crystallinity_vs_P.png", dpi=150, bbox_inches="tight")
 plt.close()
-print("Saved: crystallinity_vs_P.png")
+print(f"Saved: {out_dir / 'crystallinity_vs_P.png'}")

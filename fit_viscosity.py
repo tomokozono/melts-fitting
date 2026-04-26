@@ -1,3 +1,5 @@
+import argparse
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -72,7 +74,14 @@ def giordano2008_logeta(T_C, SiO2, TiO2, Al2O3, Fe2O3, FeO, MnO, MgO,
 
 
 # ---------- Load melts-liquid.tbl ----------
-df = pd.read_csv("melts-liquid.tbl", header=0)
+parser = argparse.ArgumentParser()
+parser.add_argument("tbl", nargs="?", default="melts-liquid.tbl",
+                    help="Path to melts-liquid.tbl")
+args = parser.parse_args()
+tbl_path = Path(args.tbl)
+out_dir  = tbl_path.parent
+
+df = pd.read_csv(tbl_path, header=0)
 df.columns = df.columns.str.strip()
 
 mask = df["wt% H2O"] > 0
@@ -104,16 +113,6 @@ log_vis_melts = d["liq vis (log 10 poise)"].values - 1.0  # log10(Pa·s) = log10
 def hess_dingwell(T_C, H2O_frac):
     x = np.log(100.0 * H2O_frac)  # ln(wt% H2O)
     return -3.545 + 0.833*x + (9601.0 - 2368.0*x) / (T_C + 273.0 - (195.7 + 32.25*x))
-
-# Verify against Excel logeta (first 5 rows)
-xl = pd.read_excel("Giordano2008.xlsx", header=0)
-xl.columns = xl.columns.str.strip()
-print("Verification (first 5 rows):")
-print(f"{'Row':>4}  {'Python':>10}  {'Excel':>10}  {'Diff':>10}")
-for i in range(5):
-    py_val = log_eta[i]
-    xl_val = xl["logeta"].values[i]
-    print(f"  {i+1:2d}  {py_val:10.6f}  {xl_val:10.6f}  {py_val-xl_val:10.6f}")
 
 # ---------- 4th degree polynomial fitting ----------
 deg = 4
@@ -178,12 +177,11 @@ ax2.set_title("Residuals", fontsize=13)
 ax2.grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig("viscosity_giordano_poly4.png", dpi=150, bbox_inches="tight")
+plt.savefig(out_dir / "viscosity_giordano_poly4.png", dpi=150, bbox_inches="tight")
 plt.close()
-print("Saved: viscosity_giordano_poly4.png")
+print(f"Saved: {out_dir / 'viscosity_giordano_poly4.png'}")
 
 # ---------- Save plot data ----------
-# Scatter data (per MELTS step)
 df_scatter = pd.DataFrame({
     "H2O_fraction":            H2O_frac,
     "log10_vis_Giordano2008":  log_eta,
@@ -191,15 +189,13 @@ df_scatter = pd.DataFrame({
     "log10_vis_poly4_fit":     np.polyval(coeffs, H2O_frac),
     "residual_Giordano_poly4": residuals,
 })
-df_scatter.to_csv("viscosity_scatter_data.csv", index=False, float_format="%.8f")
+df_scatter.to_csv(out_dir / "viscosity_scatter_data.csv", index=False, float_format="%.8f")
 
-# Curve data (model lines)
 df_curves = pd.DataFrame({
-    "H2O_fraction":          H2O_fit,
-    "log10_vis_poly4_fit":   log_eta_fit,
+    "H2O_fraction":              H2O_fit,
+    "log10_vis_poly4_fit":       log_eta_fit,
+    "log10_vis_HessDingwell1996": log_eta_hd,
 })
-# H&D is on the same H2O grid (H2O_hd == H2O_fit)
-df_curves["log10_vis_HessDingwell1996"] = log_eta_hd
-df_curves.to_csv("viscosity_curve_data.csv", index=False, float_format="%.8f")
+df_curves.to_csv(out_dir / "viscosity_curve_data.csv", index=False, float_format="%.8f")
 
-print("Saved: viscosity_scatter_data.csv, viscosity_curve_data.csv")
+print(f"Saved: {out_dir / 'viscosity_scatter_data.csv'}, {out_dir / 'viscosity_curve_data.csv'}")

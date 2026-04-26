@@ -1,9 +1,18 @@
+import argparse
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 
-df = pd.read_csv("melts-liquid.tbl", header=0)
+parser = argparse.ArgumentParser()
+parser.add_argument("tbl", nargs="?", default="melts-liquid.tbl",
+                    help="Path to melts-liquid.tbl")
+args = parser.parse_args()
+tbl_path = Path(args.tbl)
+out_dir  = tbl_path.parent
+
+df = pd.read_csv(tbl_path, header=0)
 df.columns = df.columns.str.strip()
 
 P_kbar = df["P (kbars)"].values
@@ -53,7 +62,7 @@ ax2.set_title("Residuals", fontsize=13)
 ax2.grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig("h2o_fitting.png", dpi=150, bbox_inches="tight")
+plt.savefig(out_dir / "h2o_fitting.png", dpi=150, bbox_inches="tight")
 plt.close()
 
 print(f"Fitting result: H2O = {a:.6e} * P^{b:.6f}")
@@ -63,4 +72,4 @@ print(f"  R² = {r2:.8f}")
 print(f"  N = {len(P)} points")
 print(f"  P range: {P.min():.3e} – {P.max():.3e} Pa")
 print(f"  H2O range: {H2O.min():.6f} – {H2O.max():.6f} (fraction)")
-print("Saved: h2o_fitting.png")
+print(f"Saved: {out_dir / 'h2o_fitting.png'}")

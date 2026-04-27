@@ -163,51 +163,72 @@ def hd_form(X, a, b, c, d, e, f):
     T_K = T_C_arr + 273.0
     return a + b*x + (c + d*x) / (T_K - (e + f*x))
 
-p0 = [-3.545, 0.833, 9601.0, -2368.0, 195.7, 32.25]   # H&D (1996) as initial guess
-popt_hd, pcov_hd = curve_fit(hd_form, (T_C, H2O_frac), log_eta,
-                              p0=p0, maxfev=20000)
-a_hd, b_hd, c_hd, d_hd, e_hd, f_hd = popt_hd
-perr_hd = np.sqrt(np.diag(pcov_hd))
+def fit_hd_form(X_data, y_data, label):
+    """Fit H&D-form with fallback initial guesses. Returns (popt, perr, converged)."""
+    p0 = [-3.545, 0.833, 9601.0, -2368.0, 195.7, 32.25]
+    for method in ("lm", "trf"):
+        try:
+            popt, pcov = curve_fit(hd_form, X_data, y_data, p0=p0,
+                                   method=method, maxfev=200000)
+            return popt, np.sqrt(np.diag(pcov)), True
+        except RuntimeError:
+            continue
+    print(f"  WARNING: H&D-form fit did not converge for {label}.")
+    return np.array(p0), np.full(6, np.nan), False
 
-log_eta_hd_fit_data = hd_form((T_C, H2O_frac), *popt_hd)
-residuals_hd = log_eta - log_eta_hd_fit_data
-ss_res_hd = np.sum(residuals_hd**2)
+popt_hd, perr_hd, conv_hd = fit_hd_form((T_C, H2O_frac), log_eta, "full composition")
+
+if conv_hd:
+    log_eta_hd_fit_data  = hd_form((T_C, H2O_frac), *popt_hd)
+    log_eta_hd_fit_curve = hd_form((np.full(len(H2O_fit), T_C.mean()), H2O_fit), *popt_hd)
+else:
+    log_eta_hd_fit_data  = np.full(len(H2O_frac), np.nan)
+    log_eta_hd_fit_curve = np.full(len(H2O_fit),  np.nan)
+
+residuals_hd = log_eta - np.where(np.isnan(log_eta_hd_fit_data), log_eta, log_eta_hd_fit_data)
+ss_res_hd = np.nansum(residuals_hd**2)
 r2_hd  = 1 - ss_res_hd / ss_tot
 aic_hd = n_pts * np.log(ss_res_hd / n_pts) + 2 * 6
 bic_hd = n_pts * np.log(ss_res_hd / n_pts) + 6 * np.log(n_pts)
+a_hd, b_hd, c_hd, d_hd, e_hd, f_hd = popt_hd
 
-print(f"\nH&D-form fit (6 parameters):")
+print(f"\nH&D-form fit — full composition (6 parameters){'  [CONVERGED]' if conv_hd else '  [NOT CONVERGED]'}:")
 print(f"  a = {a_hd:.4f} ± {perr_hd[0]:.4f}  (H&D: -3.545)")
 print(f"  b = {b_hd:.4f} ± {perr_hd[1]:.4f}  (H&D:  0.833)")
 print(f"  c = {c_hd:.2f} ± {perr_hd[2]:.2f}  (H&D: 9601)")
 print(f"  d = {d_hd:.2f} ± {perr_hd[3]:.2f}  (H&D: -2368)")
 print(f"  e = {e_hd:.4f} ± {perr_hd[4]:.4f}  (H&D: 195.7)")
 print(f"  f = {f_hd:.4f} ± {perr_hd[5]:.4f}  (H&D: 32.25)")
-print(f"  R² = {r2_hd:.8f},  AIC = {aic_hd:.2f},  BIC = {bic_hd:.2f}")
-
-log_eta_hd_fit_curve = hd_form((np.full(len(H2O_fit), T_C.mean()), H2O_fit), *popt_hd)
+if conv_hd:
+    print(f"  R² = {r2_hd:.8f},  AIC = {aic_hd:.2f},  BIC = {bic_hd:.2f}")
 
 # H&D-form fit for fixed-composition Giordano
 ss_tot_fc = np.sum((log_eta_fixcomp - np.mean(log_eta_fixcomp))**2)
-popt_hd_fc, pcov_hd_fc = curve_fit(hd_form, (T_C, H2O_frac), log_eta_fixcomp,
-                                    p0=p0, maxfev=20000)
-perr_hd_fc = np.sqrt(np.diag(pcov_hd_fc))
-log_eta_hd_fc_data  = hd_form((T_C, H2O_frac), *popt_hd_fc)
-log_eta_hd_fc_curve = hd_form((np.full(len(H2O_fit), T_C.mean()), H2O_fit), *popt_hd_fc)
-residuals_hd_fc = log_eta_fixcomp - log_eta_hd_fc_data
-ss_res_hd_fc = np.sum(residuals_hd_fc**2)
+popt_hd_fc, perr_hd_fc, conv_hd_fc = fit_hd_form((T_C, H2O_frac), log_eta_fixcomp, "fixed composition")
+
+if conv_hd_fc:
+    log_eta_hd_fc_data  = hd_form((T_C, H2O_frac), *popt_hd_fc)
+    log_eta_hd_fc_curve = hd_form((np.full(len(H2O_fit), T_C.mean()), H2O_fit), *popt_hd_fc)
+else:
+    log_eta_hd_fc_data  = np.full(len(H2O_frac), np.nan)
+    log_eta_hd_fc_curve = np.full(len(H2O_fit),  np.nan)
+
+residuals_hd_fc = log_eta_fixcomp - np.where(np.isnan(log_eta_hd_fc_data), log_eta_fixcomp, log_eta_hd_fc_data)
+ss_res_hd_fc = np.nansum(residuals_hd_fc**2)
 r2_hd_fc  = 1 - ss_res_hd_fc / ss_tot_fc
 aic_hd_fc = n_pts * np.log(ss_res_hd_fc / n_pts) + 2 * 6
 bic_hd_fc = n_pts * np.log(ss_res_hd_fc / n_pts) + 6 * np.log(n_pts)
-
 a_hd_fc, b_hd_fc, c_hd_fc, d_hd_fc, e_hd_fc, f_hd_fc = popt_hd_fc
-print(f"\nH&D-form fit — fixed composition (6 parameters):")
+
+print(f"\nH&D-form fit — fixed composition (6 parameters){'  [CONVERGED]' if conv_hd_fc else '  [NOT CONVERGED]'}:")
 print(f"  a = {a_hd_fc:.4f} ± {perr_hd_fc[0]:.4f}")
 print(f"  b = {b_hd_fc:.4f} ± {perr_hd_fc[1]:.4f}")
 print(f"  c = {c_hd_fc:.2f} ± {perr_hd_fc[2]:.2f}")
 print(f"  d = {d_hd_fc:.2f} ± {perr_hd_fc[3]:.2f}")
 print(f"  e = {e_hd_fc:.4f} ± {perr_hd_fc[4]:.4f}")
 print(f"  f = {f_hd_fc:.4f} ± {perr_hd_fc[5]:.4f}")
+if conv_hd_fc:
+    print(f"  R² = {r2_hd_fc:.8f},  AIC = {aic_hd_fc:.2f},  BIC = {bic_hd_fc:.2f}")
 print(f"  R² = {r2_hd_fc:.8f},  AIC = {aic_hd_fc:.2f},  BIC = {bic_hd_fc:.2f}")
 
 # ---------- Plot ----------

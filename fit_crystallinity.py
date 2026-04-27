@@ -53,13 +53,9 @@ print(f"Model A — Exponential only:")
 print(f"  C = {A_exp:.6f} * exp(-{k_exp:.6f} * P)")
 print(f"  R² = {r2_exp:.6f},  AIC = {aic_exp:.2f}")
 
-# ---------- Model B: piecewise  exp (P>=BP) + quadratic (P<BP) ----------
-BP = 40.0
-mask_hi = P_MPa >= BP
-mask_lo = P_MPa <  BP
-
+# ---------- Model B: piecewise  exp (P>=BP) + quadratic (P<BP), BP fitted ----------
 def piecewise(params, P):
-    A, k, a3, b3 = params
+    A, k, a3, b3, BP = params
     v2 = A * np.exp(-k * BP)
     m_hi = P >= BP
     m_lo = P < BP
@@ -69,21 +65,35 @@ def piecewise(params, P):
     return C
 
 def cost_pw(params):
+    BP = params[4]
+    if BP <= P_MPa.min() or BP >= P_MPa.max():
+        return 1e10
     return np.sum((crystallinity - piecewise(params, P_MPa))**2)
 
-c3u = np.polyfit(P_MPa[mask_lo], crystallinity[mask_lo], 2)
-x0 = [A_exp, k_exp, c3u[0], c3u[1]]
-res_pw = minimize(cost_pw, x0, method="Nelder-Mead",
-                  options={"xatol": 1e-12, "fatol": 1e-14, "maxiter": 200000})
-A_pw, k_pw, a3_pw, b3_pw = res_pw.x
-v2_pw = A_pw * np.exp(-k_pw * BP)
+# Multi-start: grid search over BP candidates, keep best result
+BP_candidates = np.linspace(P_MPa.min() + 5, P_MPa.max() - 5, 20)
+best_res = None
+for BP0 in BP_candidates:
+    mask_lo0 = P_MPa < BP0
+    if mask_lo0.sum() < 3 or (~mask_lo0).sum() < 3:
+        continue
+    c3u = np.polyfit(P_MPa[mask_lo0], crystallinity[mask_lo0], 2)
+    x0 = [A_exp, k_exp, c3u[0], c3u[1], BP0]
+    res = minimize(cost_pw, x0, method="Nelder-Mead",
+                   options={"xatol": 1e-12, "fatol": 1e-14, "maxiter": 200000})
+    if best_res is None or res.fun < best_res.fun:
+        best_res = res
+res_pw = best_res
+A_pw, k_pw, a3_pw, b3_pw, BP_pw = res_pw.x
+v2_pw = A_pw * np.exp(-k_pw * BP_pw)
 C_pred_pw = piecewise(res_pw.x, P_MPa)
 r2_pw  = r2_score(crystallinity, C_pred_pw)
-aic_pw = aic_score(crystallinity, C_pred_pw, k=4)
+aic_pw = aic_score(crystallinity, C_pred_pw, k=5)
 
-print(f"\nModel B — Piecewise (exp P≥{BP:.0f} MPa + quadratic P<{BP:.0f} MPa):")
-print(f"  C = {A_pw:.6f} * exp(-{k_pw:.6f} * P)  [P≥{BP:.0f}]")
-print(f"  C = {a3_pw:.6f}*(P-{BP})² + {b3_pw:.6f}*(P-{BP}) + {v2_pw:.6f}  [P<{BP:.0f}]")
+print(f"\nModel B — Piecewise (exp P≥BP + quadratic P<BP, BP fitted):")
+print(f"  BP = {BP_pw:.2f} MPa")
+print(f"  C = {A_pw:.6f} * exp(-{k_pw:.6f} * P)  [P≥{BP_pw:.2f}]")
+print(f"  C = {a3_pw:.6f}*(P-{BP_pw:.2f})² + {b3_pw:.6f}*(P-{BP_pw:.2f}) + {v2_pw:.6f}  [P<{BP_pw:.2f}]")
 print(f"  R² = {r2_pw:.6f},  AIC = {aic_pw:.2f}")
 
 # ---------- Model selection by AIC ----------
@@ -93,10 +103,10 @@ if aic_exp <= aic_pw:
     r2_all = r2_exp
     print(f"\n>>> Selected: Model A (Exponential only)  — better AIC ({aic_exp:.2f} ≤ {aic_pw:.2f})")
 else:
-    model_name = "Piecewise (exp + quadratic)"
+    model_name = f"Piecewise (exp + quadratic, BP={BP_pw:.1f} MPa)"
     C_pred = C_pred_pw
     r2_all = r2_pw
-    print(f"\n>>> Selected: Model B (Piecewise)  — better AIC ({aic_pw:.2f} < {aic_exp:.2f})")
+    print(f"\n>>> Selected: Model B (Piecewise, BP={BP_pw:.1f} MPa)  — better AIC ({aic_pw:.2f} < {aic_exp:.2f})")
 
 # ---------- Plot ----------
 P_plt = np.linspace(P_MPa.min(), P_MPa.max(), 500)
@@ -116,13 +126,15 @@ if aic_exp <= aic_pw:
             label=f"Piecewise (ref)  R²={r2_pw:.4f}")
     ax.plot(P_lo_plt, piecewise(res_pw.x, P_lo_plt), "g--", linewidth=1.5, alpha=0.6)
 else:
-    P_hi_plt = np.linspace(BP, P_MPa.max(), 300)
-    P_lo_plt = np.linspace(P_MPa.min(), BP, 300)
+    mask_hi_pw = P_MPa >= BP_pw
+    mask_lo_pw = P_MPa <  BP_pw
+    P_hi_plt = np.linspace(BP_pw, P_MPa.max(), 300)
+    P_lo_plt = np.linspace(P_MPa.min(), BP_pw, 300)
     ax.plot(P_hi_plt, piecewise(res_pw.x, P_hi_plt), "r-", linewidth=2,
-            label=f"Exp (P≥{BP:.0f})  R²={r2_score(crystallinity[mask_hi], C_pred_pw[mask_hi]):.4f}")
+            label=f"Exp (P≥{BP_pw:.1f})  R²={r2_score(crystallinity[mask_hi_pw], C_pred_pw[mask_hi_pw]):.4f}")
     ax.plot(P_lo_plt, piecewise(res_pw.x, P_lo_plt), "m-", linewidth=2,
-            label=f"Quad (P<{BP:.0f})  R²={r2_score(crystallinity[mask_lo], C_pred_pw[mask_lo]):.4f}")
-    ax.axvline(BP, color="gray", linestyle="--", linewidth=1, alpha=0.7)
+            label=f"Quad (P<{BP_pw:.1f})  R²={r2_score(crystallinity[mask_lo_pw], C_pred_pw[mask_lo_pw]):.4f}")
+    ax.axvline(BP_pw, color="gray", linestyle="--", linewidth=1, alpha=0.7)
     # also show exp-only for reference
     ax.plot(P_plt, exp_only(P_plt, *popt_exp), "g--", linewidth=1.5, alpha=0.6,
             label=f"Exp only (ref)  R²={r2_exp:.4f}")

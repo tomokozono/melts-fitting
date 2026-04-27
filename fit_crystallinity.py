@@ -33,10 +33,15 @@ def aic_score(C_obs, C_pred, k):
 def exp_only(P, A, k):
     return A * np.exp(-k * P)
 
-C_hi = crystallinity[np.argmin(np.abs(P_MPa - 40))]
-C_lo = crystallinity[np.argmin(np.abs(P_MPa - 100))]
-k0 = np.log(C_hi / C_lo) / (100 - 40)
-A0 = C_hi / np.exp(-k0 * 40)
+# Robust initial guess via log-linear fit on positive-crystallinity points
+pos = crystallinity > 0
+if pos.sum() >= 2:
+    log_c = np.log(crystallinity[pos])
+    slope, intercept = np.polyfit(P_MPa[pos], log_c, 1)
+    k0 = max(-slope, 1e-6)   # k must be positive
+    A0 = np.exp(intercept)
+else:
+    k0, A0 = 0.04, 1.0
 
 popt_exp, _ = curve_fit(exp_only, P_MPa, crystallinity, p0=[A0, k0], maxfev=50000)
 A_exp, k_exp = popt_exp

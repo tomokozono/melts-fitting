@@ -187,6 +187,29 @@ print(f"  R² = {r2_hd:.8f},  AIC = {aic_hd:.2f},  BIC = {bic_hd:.2f}")
 
 log_eta_hd_fit_curve = hd_form((np.full(len(H2O_fit), T_C.mean()), H2O_fit), *popt_hd)
 
+# H&D-form fit for fixed-composition Giordano
+ss_tot_fc = np.sum((log_eta_fixcomp - np.mean(log_eta_fixcomp))**2)
+popt_hd_fc, pcov_hd_fc = curve_fit(hd_form, (T_C, H2O_frac), log_eta_fixcomp,
+                                    p0=p0, maxfev=20000)
+perr_hd_fc = np.sqrt(np.diag(pcov_hd_fc))
+log_eta_hd_fc_data  = hd_form((T_C, H2O_frac), *popt_hd_fc)
+log_eta_hd_fc_curve = hd_form((np.full(len(H2O_fit), T_C.mean()), H2O_fit), *popt_hd_fc)
+residuals_hd_fc = log_eta_fixcomp - log_eta_hd_fc_data
+ss_res_hd_fc = np.sum(residuals_hd_fc**2)
+r2_hd_fc  = 1 - ss_res_hd_fc / ss_tot_fc
+aic_hd_fc = n_pts * np.log(ss_res_hd_fc / n_pts) + 2 * 6
+bic_hd_fc = n_pts * np.log(ss_res_hd_fc / n_pts) + 6 * np.log(n_pts)
+
+a_hd_fc, b_hd_fc, c_hd_fc, d_hd_fc, e_hd_fc, f_hd_fc = popt_hd_fc
+print(f"\nH&D-form fit — fixed composition (6 parameters):")
+print(f"  a = {a_hd_fc:.4f} ± {perr_hd_fc[0]:.4f}")
+print(f"  b = {b_hd_fc:.4f} ± {perr_hd_fc[1]:.4f}")
+print(f"  c = {c_hd_fc:.2f} ± {perr_hd_fc[2]:.2f}")
+print(f"  d = {d_hd_fc:.2f} ± {perr_hd_fc[3]:.2f}")
+print(f"  e = {e_hd_fc:.4f} ± {perr_hd_fc[4]:.4f}")
+print(f"  f = {f_hd_fc:.4f} ± {perr_hd_fc[5]:.4f}")
+print(f"  R² = {r2_hd_fc:.8f},  AIC = {aic_hd_fc:.2f},  BIC = {bic_hd_fc:.2f}")
+
 # ---------- Plot ----------
 fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 
@@ -203,7 +226,9 @@ ax.scatter(H2O_frac, log_vis_melts, s=4, alpha=0.35, color="orange",
 ax.plot(H2O_fit, log_eta_fit, "r-", linewidth=2,
         label=f"Degree-4 poly fit  R²={r2_poly:.6f}")
 ax.plot(H2O_fit, log_eta_hd_fit_curve, "r--", linewidth=2,
-        label=f"H&D-form fit (6 params)  R²={r2_hd:.6f}")
+        label=f"H&D-form fit (full comp.)  R²={r2_hd:.6f}")
+ax.plot(H2O_fit, log_eta_hd_fc_curve, color="mediumpurple", linestyle="--", linewidth=2,
+        label=f"H&D-form fit (fixed comp.)  R²={r2_hd_fc:.6f}")
 ax.plot(H2O_hd, log_eta_hd, "g--", linewidth=2,
         label="Hess & Dingwell (1996)")
 ax.set_xlabel("H₂O (fraction)", fontsize=12)
@@ -213,10 +238,12 @@ ax.legend(fontsize=9)
 ax.grid(True, alpha=0.3)
 
 ax2 = axes[1]
-ax2.scatter(H2O_frac, residuals_poly, s=4, alpha=0.35, color="red",
-            label=f"Poly-4  R²={r2_poly:.6f}")
-ax2.scatter(H2O_frac, residuals_hd,   s=4, alpha=0.35, color="darkred",
-            label=f"H&D-form  R²={r2_hd:.6f}")
+ax2.scatter(H2O_frac, residuals_poly,   s=4, alpha=0.35, color="red",
+            label=f"Poly-4 (full)  R²={r2_poly:.6f}")
+ax2.scatter(H2O_frac, residuals_hd,    s=4, alpha=0.35, color="darkred",
+            label=f"H&D-form (full)  R²={r2_hd:.6f}")
+ax2.scatter(H2O_frac, residuals_hd_fc, s=4, alpha=0.35, color="mediumpurple",
+            label=f"H&D-form (fixed)  R²={r2_hd_fc:.6f}")
 ax2.axhline(0, color="black", linewidth=1)
 ax2.legend(fontsize=9)
 ax2.set_xlabel("H₂O (fraction)", fontsize=12)
@@ -236,16 +263,19 @@ df_scatter = pd.DataFrame({
     "log10_vis_Giordano2008_fixcomp":  log_eta_fixcomp,
     "log10_vis_MELTS":                 log_vis_melts,
     "log10_vis_poly4_fit":             np.polyval(coeffs, H2O_frac),
-    "log10_vis_HDform_fit":            log_eta_hd_fit_data,
+    "log10_vis_HDform_fit_full":        log_eta_hd_fit_data,
+    "log10_vis_HDform_fit_fixcomp":    log_eta_hd_fc_data,
     "residual_poly4":                  residuals_poly,
-    "residual_HDform":                 residuals_hd,
+    "residual_HDform_full":            residuals_hd,
+    "residual_HDform_fixcomp":         residuals_hd_fc,
 })
 df_scatter.to_csv(out_dir / "viscosity_scatter_data.csv", index=False, float_format="%.8f")
 
 df_curves = pd.DataFrame({
     "H2O_fraction":              H2O_fit,
     "log10_vis_poly4_fit":        log_eta_fit,
-    "log10_vis_HDform_fit":       log_eta_hd_fit_curve,
+    "log10_vis_HDform_fit_full":   log_eta_hd_fit_curve,
+    "log10_vis_HDform_fit_fixcomp": log_eta_hd_fc_curve,
     "log10_vis_HessDingwell1996": log_eta_hd,
 })
 df_curves.to_csv(out_dir / "viscosity_curve_data.csv", index=False, float_format="%.8f")

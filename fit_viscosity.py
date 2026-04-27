@@ -134,8 +134,8 @@ def hess_dingwell(T_C, H2O_frac):
     x = np.log(100.0 * H2O_frac)  # ln(wt% H2O)
     return -3.545 + 0.833*x + (9601.0 - 2368.0*x) / (T_C + 273.0 - (195.7 + 32.25*x))
 
-# ---------- 4th degree polynomial fitting ----------
-deg = 4
+# ---------- 3rd degree polynomial fitting ----------
+deg = 3
 coeffs = np.polyfit(H2O_frac, log_eta, deg)
 log_eta_pred = np.polyval(coeffs, H2O_frac)
 residuals_poly = log_eta - log_eta_pred
@@ -146,7 +146,7 @@ n_pts, k = len(H2O_frac), deg + 1
 aic_poly = n_pts * np.log(ss_res / n_pts) + 2 * k
 bic_poly = n_pts * np.log(ss_res / n_pts) + k * np.log(n_pts)
 
-print(f"\n4th-degree polynomial fit:")
+print(f"\n3rd-degree polynomial fit:")
 print(f"  Coefficients (high→low): {coeffs}")
 print(f"  R² = {r2_poly:.8f},  AIC = {aic_poly:.2f},  BIC = {bic_poly:.2f}")
 
@@ -224,7 +224,7 @@ ax.scatter(H2O_frac, log_eta_fixcomp, s=4, alpha=0.35, color="mediumpurple",
 ax.scatter(H2O_frac, log_vis_melts, s=4, alpha=0.35, color="orange",
            label="MELTS liq vis")
 ax.plot(H2O_fit, log_eta_fit, "r-", linewidth=2,
-        label=f"Degree-4 poly fit  R²={r2_poly:.6f}")
+        label=f"Degree-3 poly fit  R²={r2_poly:.6f}")
 ax.plot(H2O_fit, log_eta_hd_fit_curve, "r--", linewidth=2,
         label=f"H&D-form fit (full comp.)  R²={r2_hd:.6f}")
 ax.plot(H2O_fit, log_eta_hd_fc_curve, color="mediumpurple", linestyle="--", linewidth=2,
@@ -239,7 +239,7 @@ ax.grid(True, alpha=0.3)
 
 ax2 = axes[1]
 ax2.scatter(H2O_frac, residuals_poly,   s=4, alpha=0.35, color="red",
-            label=f"Poly-4 (full)  R²={r2_poly:.6f}")
+            label=f"Poly-3 (full)  R²={r2_poly:.6f}")
 ax2.scatter(H2O_frac, residuals_hd,    s=4, alpha=0.35, color="darkred",
             label=f"H&D-form (full)  R²={r2_hd:.6f}")
 ax2.scatter(H2O_frac, residuals_hd_fc, s=4, alpha=0.35, color="mediumpurple",
@@ -252,9 +252,9 @@ ax2.set_title("Residuals", fontsize=13)
 ax2.grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig(out_dir / "viscosity_giordano_poly4.png", dpi=150, bbox_inches="tight")
+plt.savefig(out_dir / "viscosity_giordano_poly3.png", dpi=150, bbox_inches="tight")
 plt.close()
-print(f"Saved: {out_dir / 'viscosity_giordano_poly4.png'}")
+print(f"Saved: {out_dir / 'viscosity_giordano_poly3.png'}")
 
 # ---------- Save plot data ----------
 df_scatter = pd.DataFrame({

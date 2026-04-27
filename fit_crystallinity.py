@@ -164,3 +164,29 @@ plt.tight_layout()
 plt.savefig(out_dir / "crystallinity_vs_P.png", dpi=150, bbox_inches="tight")
 plt.close()
 print(f"Saved: {out_dir / 'crystallinity_vs_P.png'}")
+
+txt_path = out_dir / "crystallinity_fitting_coeffs.txt"
+with open(txt_path, "w") as f:
+    f.write("=== Crystallinity fitting results ===\n")
+    f.write(f"V1 (index=1) = {V1:.6f} cc\n\n")
+
+    f.write("[Model A — Exponential only]\n")
+    f.write(f"  C = A * exp(-k * P [MPa])\n")
+    f.write(f"  A = {A_exp:.8e}\n")
+    f.write(f"  k = {k_exp:.8e}\n")
+    f.write(f"  R2 = {r2_exp:.8f},  AIC = {aic_exp:.2f}\n\n")
+
+    f.write("[Model B — Piecewise: exp (P>=BP) + quadratic (P<BP)]\n")
+    f.write(f"  BP = {BP_pw:.4f} MPa\n")
+    f.write(f"  Hi (P>=BP): C = A * exp(-k * P)\n")
+    f.write(f"    A  = {A_pw:.8e}\n")
+    f.write(f"    k  = {k_pw:.8e}\n")
+    f.write(f"  Lo (P<BP):  C = a3*(P-BP)^2 + b3*(P-BP) + v2\n")
+    f.write(f"    a3 = {a3_pw:.8e}\n")
+    f.write(f"    b3 = {b3_pw:.8e}\n")
+    f.write(f"    v2 = {v2_pw:.8e}  [= A*exp(-k*BP), continuity]\n")
+    f.write(f"  R2 = {r2_pw:.8f},  AIC = {aic_pw:.2f}\n\n")
+
+    f.write(f"[Selected model: {'A (Exponential only)' if aic_exp <= aic_pw else 'B (Piecewise)'}]\n")
+    f.write(f"  AIC_A = {aic_exp:.2f},  AIC_B = {aic_pw:.2f}\n")
+print(f"Saved: {txt_path}")

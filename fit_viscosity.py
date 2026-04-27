@@ -302,3 +302,35 @@ df_curves = pd.DataFrame({
 df_curves.to_csv(out_dir / "viscosity_curve_data.csv", index=False, float_format="%.8f")
 
 print(f"Saved: {out_dir / 'viscosity_scatter_data.csv'}, {out_dir / 'viscosity_curve_data.csv'}")
+
+txt_path = out_dir / "viscosity_fitting_coeffs.txt"
+with open(txt_path, "w") as f:
+    f.write("=== Viscosity fitting results ===\n")
+    f.write(f"Model: log10(eta [Pa·s]) = a0 + a1·X + a2·X² + a3·X³,  X = H2O (fraction)\n\n")
+    f.write(f"[Degree-3 polynomial — full composition]\n")
+    for i, c in enumerate(coeffs):
+        f.write(f"  a{deg-i} = {c:.8e}\n")
+    f.write(f"  R2 = {r2_poly:.8f},  AIC = {aic_poly:.2f},  BIC = {bic_poly:.2f}\n\n")
+
+    f.write(f"[H&D-form — full composition{'  CONVERGED' if conv_hd else '  NOT CONVERGED'}]\n")
+    f.write(f"  Model: log10(eta) = a + b·x + (c + d·x) / (T_K - (e + f·x)),  x = ln(wt% H2O)\n")
+    labels_hd = list("abcdef")
+    for lbl, val, err in zip(labels_hd, popt_hd, perr_hd):
+        f.write(f"  {lbl} = {val:.8e}  ±  {err:.8e}\n")
+    if conv_hd:
+        f.write(f"  R2 = {r2_hd:.8f},  AIC = {aic_hd:.2f},  BIC = {bic_hd:.2f}\n\n")
+    else:
+        f.write("  (not converged — values unreliable)\n\n")
+
+    f.write(f"[H&D-form — fixed composition (index=1), H2O only{'  CONVERGED' if conv_hd_fc else '  NOT CONVERGED'}]\n")
+    f.write(f"  Model: log10(eta) = a + b·x + (c + d·x) / (T_K - (e + f·x)),  x = ln(wt% H2O)\n")
+    for lbl, val, err in zip(labels_hd, popt_hd_fc, perr_hd_fc):
+        f.write(f"  {lbl} = {val:.8e}  ±  {err:.8e}\n")
+    if conv_hd_fc:
+        f.write(f"  R2 = {r2_hd_fc:.8f},  AIC = {aic_hd_fc:.2f},  BIC = {bic_hd_fc:.2f}\n\n")
+    else:
+        f.write("  (not converged — values unreliable)\n\n")
+
+    f.write(f"[Reference: Hess & Dingwell (1996)]\n")
+    f.write(f"  log10(eta) = -3.545 + 0.833·x + (9601 - 2368·x) / (T + 273 - (195.7 + 32.25·x))\n")
+print(f"Saved: {txt_path}")

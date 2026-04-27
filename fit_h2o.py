@@ -73,3 +73,16 @@ print(f"  N = {len(P)} points")
 print(f"  P range: {P.min():.3e} – {P.max():.3e} Pa")
 print(f"  H2O range: {H2O.min():.6f} – {H2O.max():.6f} (fraction)")
 print(f"Saved: {out_dir / 'h2o_fitting.png'}")
+
+txt_path = out_dir / "h2o_fitting_coeffs.txt"
+with open(txt_path, "w") as f:
+    f.write("=== H2O solubility fitting results ===\n")
+    f.write(f"Model: H2O (fraction) = a * P (Pa) ^ b\n\n")
+    f.write(f"a = {a:.8e}  ±  {perr[0]:.8e}\n")
+    f.write(f"b = {b:.8f}  ±  {perr[1]:.8f}\n\n")
+    f.write(f"R2      = {r2:.8f}\n")
+    f.write(f"N       = {len(P)}\n")
+    f.write(f"P range = {P.min():.4e} – {P.max():.4e} Pa\n")
+    f.write(f"H2O range = {H2O.min():.6f} – {H2O.max():.6f} (fraction)\n\n")
+    f.write("Reference: BD1974  H2O = 4.11e-6 * P^0.5\n")
+print(f"Saved: {txt_path}")
